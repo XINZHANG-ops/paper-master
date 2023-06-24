@@ -1,0 +1,77 @@
+var pageNum = 1;
+var pdfDoc = null;
+var pdfFile = null;
+var pdfUrl = null;
+var totalChunks = null;
+
+function initPDFViewer(fileUrl) {
+    pdfUrl = fileUrl;
+    pdfjsLib.getDocument(fileUrl).promise.then(function (pdfDoc_) {
+        pdfDoc = pdfDoc_;
+        totalChunks = pdfDoc.numPages;
+        document.getElementById('page_num').textContent = pageNum + '/' + totalChunks;
+        renderPage(pageNum);
+    });
+}
+
+function renderPage(num) {
+    pdfDoc.getPage(num).then(function (page) {
+        var viewport = page.getViewport({ scale: 1.5, });
+        var canvas = document.getElementById('the-canvas');
+        var context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        var renderContext = {
+            canvasContext: context,
+            viewport: viewport,
+        };
+        page.render(renderContext);
+    });
+}
+
+document.getElementById('prev').addEventListener('click', function () {
+    if (pageNum <= 1) {
+        return;
+    }
+    pageNum--;
+    renderPage(pageNum);
+    document.getElementById('page_num').textContent = pageNum + '/' + totalChunks;
+});
+
+document.getElementById('next').addEventListener('click', function () {
+    if (pageNum >= totalChunks) {
+        return;
+    }
+    pageNum++;
+    renderPage(pageNum);
+    document.getElementById('page_num').textContent = pageNum + '/' + totalChunks;
+});
+
+// 响应获取 chunks 的按钮点击事件
+$("#get-analysis").click(function() {
+    var source = new EventSource("/api/generate_chunks/" + window.filename);
+    source.onmessage = function(event) {
+        var data = JSON.parse(event.data);
+        $("#chunks").empty();  // 清空原有的 chunks
+        for (var i = 0; i < data.chunks.length; i++) {
+            $("#chunks").append("<div>" + data.chunks[i] + "</div>");
+        }
+        // 更新 total_usage
+        $(".small-font").text("Total Usage: " + data.total_usage);
+    };
+});
+
+var source = new EventSource("/progress");
+source.onmessage = function(event) {
+    document.getElementById("progress-bar").value = event.data;
+};
+
+function handleScroll(event) {
+    event.preventDefault();
+    document.getElementById('note-textarea').scrollTop += event.deltaY;
+}
+
+function autoSaveNote() {
+    // Auto save note function here.
+}

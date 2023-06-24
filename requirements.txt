@@ -1,0 +1,12 @@
+Flask
+python-dotenv
+matplotlib
+pandas
+plotly
+chardet
+cchardet
+openai
+pdfplumber
+PyMuPDF
+PyPDF2
+scikit-learn
