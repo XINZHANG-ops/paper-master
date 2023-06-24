@@ -4,17 +4,24 @@ import time
 import os
 import json
 import openai
-from utils import table_of_content_chunk, chat_completion, table_of_content_exist_checker, page_chunks
+from utils import table_of_content_chunk, chat_completion, table_of_content_exist_checker, page_chunks, check_analysis_exist
 from dotenv import load_dotenv
+from flask import send_file
+import shutil
+import tempfile
+import zipfile
 
 app = Flask(__name__)
 app.secret_key = "a_complex_string_which_is_difficult_to_guess"
 # app.secret_key = os.getenv("SECRET_KEY") if SECRET_KEY is in .env
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
+app.config['TASK_SHOULD_STOP'] = False
+app.config['TASK_RUNNING'] = False
 app.config['QUESTION'] = "请用中文告诉我这个章节内容的重点是什么？"
 app.config['QUESTION'] = "请用中文告诉我这一页内容的重点是什么？"
-pdf_folder = os.path.join(app.root_path, 'static', 'pdfs')
+analysis_folder = os.path.join(app.root_path, 'static', 'analysis')
 progress = 0  # 这个变量将存储进度信息
+
 
 def get_notes_file_path(filename):
     filename = secure_filename(filename)
@@ -93,7 +100,7 @@ def delete_file(filename):
     if os.path.exists(pdf_path):
         os.remove(pdf_path)
     # 删除JSON文件
-    json_path = os.path.join(app.root_path, 'static', 'pdfs', filename + '.json')
+    json_path = os.path.join(analysis_folder, filename + '.json')
     if os.path.exists(json_path):
         os.remove(json_path)
     # 删除 notes 文件
@@ -109,13 +116,13 @@ def delete_analysis(filename):
     # 安全地处理文件名
     filename = secure_filename(filename)
     # 删除 JSON 文件
-    json_path = os.path.join(app.root_path, 'static', 'pdfs', filename + '.json')
+    json_path = os.path.join(analysis_folder, filename + '.json')
     if os.path.exists(json_path):
         os.remove(json_path)
     # 删除 notes 文件
-    notes_path = get_notes_file_path(filename)
-    if os.path.exists(notes_path):
-        os.remove(notes_path)
+    # notes_path = get_notes_file_path(filename)
+    # if os.path.exists(notes_path):
+    #     os.remove(notes_path)
     # 重定向回主页
     return redirect(url_for('home'))
 
@@ -124,7 +131,7 @@ def delete_analysis(filename):
 def view_pdf(filename):
     session['filename'] = filename
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    chunks_path = os.path.join(app.root_path, 'static', 'pdfs', filename + '.json')
+    chunks_path = os.path.join(analysis_folder, filename + '.json')
 
     if os.path.exists(chunks_path):
         with open(chunks_path, 'r') as f:
@@ -138,38 +145,67 @@ def view_pdf(filename):
 
 @app.route('/api/generate_chunks/<filename>', methods=['POST'])
 def generate_chunks(filename):
-    global progress
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    chunks_path = os.path.join(app.root_path, 'static', 'pdfs', filename + '.json')
-    chunks_info = []
-    if_toc_valid = table_of_content_exist_checker(file_path)
-    if if_toc_valid:
-        app.config['QUESTION'] = "请用中文告诉我这个段落内容的重点是什么？"
-        chunks, pages, chunks_names = table_of_content_chunk(file_path)
-    else:
-        app.config['QUESTION'] = "请用中文告诉我这一页内容的重点是什么？"
-        chunks, pages, chunks_names = page_chunks(file_path)
-    total_usage = 0
-    chunks_count = len(chunks)
-    for i, chunk in enumerate(chunks):
-        chunk_words_count = len(chunk.split(' '))
-        if chunk_words_count >= 5:
-            chunk, usage = chat_completion(app.config['QUESTION'], chunk, temperature=0.1)
+    def generate():
+        global progress
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        chunks_path = os.path.join(analysis_folder, filename + '.json')
+        if_toc_valid = table_of_content_exist_checker(file_path)
+        if if_toc_valid:
+            app.config['QUESTION'] = "请用中文告诉我这个段落内容的重点是什么？"
+            chunks, pages, chunks_names = table_of_content_chunk(file_path)
         else:
-            chunk = ' '
-            usage = 0
-        progress = (i + 1) / chunks_count * 100
-        total_usage += usage
-        chunks_info.append(chunk)
-    chunk_data = {
-        'chunks': chunks_info,
-        'pages': pages,
-        'chunks_names': chunks_names,
-        'total_usage': f'{total_usage}USD'
-    }
-    with open(chunks_path, 'w') as f:
-        json.dump(chunk_data, f)
+            app.config['QUESTION'] = "请用中文告诉我这一页内容的重点是什么？"
+            chunks, pages, chunks_names = page_chunks(file_path)
+        chunks_info, start_idx, total_usage = check_analysis_exist(chunks_path)
+        chunks = chunks[start_idx:]
+        chunks_count = len(chunks)
+        if chunks_count == 0:
+            print("Data is Complete!")
+            chunk_data = {
+                'chunks': chunks_info,
+                'pages': pages,
+                'chunks_names': chunks_names,
+                'total_usage': total_usage
+            }
+            yield f"data: {json.dumps(chunk_data)}\n\n"  # 使用 SSE 格式推送数据
+        else:
+            app.config['TASK_RUNNING'] = True
+            for i, chunk in enumerate(chunks):
+                if app.config['TASK_SHOULD_STOP']:
+                    app.config['TASK_SHOULD_STOP'] = False  # 重置变量
+                    app.config['TASK_RUNNING'] = False
+                    return jsonify({'error': 'task stopped by user'})  # 返回特殊响应
+                chunk_words_count = len(chunk.split(' '))
+                if chunk_words_count >= 5:
+                    chunk, usage = chat_completion(app.config['QUESTION'], chunk, temperature=0.1)
+                else:
+                    chunk = ' '
+                    usage = 0
+                progress = (i + 1) / chunks_count * 100
+                total_usage += usage
+                chunks_info.append(chunk)
+                chunk_data = {
+                    'chunks': chunks_info,
+                    'pages': pages,
+                    'chunks_names': chunks_names,
+                    'total_usage': total_usage
+                }
+                yield f"data: {json.dumps(chunk_data)}\n\n"  # 使用 SSE 格式推送数据
+                with open(chunks_path, 'w') as f:
+                    json.dump(chunk_data, f)
+            app.config['TASK_RUNNING'] = False
 
+    return Response(generate(), mimetype='text/event-stream')  # 返回 SSE 流
+
+
+@app.route('/api/upload_chunks/<filename>', methods=['POST'])
+def upload_chunks(filename):
+    global progress
+    progress = 0
+    file = request.files['file']
+    file.save(os.path.join(analysis_folder, filename + '.json'))
+    with open(os.path.join(analysis_folder, filename + '.json')) as f:
+        chunk_data = json.load(f)
     return jsonify(chunk_data)  # 返回生成的 chunks 数据
 
 
@@ -179,7 +215,7 @@ def get_chunks(page_num):
     if not filename:
         return jsonify({'error': 'No file selected'}), 400  # 如果没有选择文件，返回错误信息
 
-    chunks_path = os.path.join(app.root_path, 'static', 'pdfs', filename + '.json')
+    chunks_path = os.path.join(analysis_folder, filename + '.json')
 
     if not os.path.exists(chunks_path):
         return jsonify({'error': 'Chunks data not found'}), 404  # 如果没有找到 chunks 数据，返回错误信息
@@ -194,15 +230,18 @@ def get_chunks(page_num):
     page_chunks = []
     for i, page in enumerate(pages):
         if page == page_num:
-            page_chunks.append(chunks_names[i] + ': \n' + chunks[i])
+            try:
+                page_chunks.append(chunks_names[i] + ': \n' + chunks[i])
+            except:
+                continue
     return jsonify({'chunks': page_chunks})
 
 
 @app.route('/download_chunks/<filename>', methods=['GET'])
 def download_chunks(filename):
-    chunks_path = os.path.join(app.root_path, 'static', 'pdfs', filename + '.json')
+    chunks_path = os.path.join(analysis_folder, filename + '.json')
     if os.path.exists(chunks_path):
-        return send_from_directory(directory=os.path.join(app.root_path, 'static', 'pdfs'), path=filename + '.json', as_attachment=True)
+        return send_from_directory(directory=analysis_folder, path=filename + '.json', as_attachment=True)
     else:
         return "File not found.", 404
 
@@ -247,7 +286,41 @@ def get_first_nonempty_note(filename):
     return jsonify({'page_num': None, 'note': ''})
 
 
+@app.route('/download_all')
+def download_all():
+    # 创建一个临时目录来存放要下载的文件
+    temp_dir = tempfile.mkdtemp()
+
+    # 为每一种类型的文件创建一个子文件夹，然后将相应的文件复制到这些子文件夹中
+    for folder in ['static/uploads', 'static/notes', 'static/analysis']:
+        folder_name = os.path.basename(folder)  # 获取文件夹的名称，例如"notes"
+        temp_subdir = os.path.join(temp_dir, folder_name)
+        os.makedirs(temp_subdir)
+        for filename in os.listdir(folder):
+            shutil.copy(os.path.join(folder, filename), temp_subdir)
+
+    # 创建一个ZIP文件
+    zip_filename = os.path.join(temp_dir, 'all_files.zip')
+    with zipfile.ZipFile(zip_filename, 'w') as zipf:
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                if file != 'all_files.zip':  # 避免将ZIP文件自身添加到ZIP文件中
+                    # arcname 参数用于设置ZIP文件中的文件名。它需要包含子文件夹的名称。
+                    arcname = os.path.relpath(os.path.join(root, file), temp_dir)
+                    zipf.write(os.path.join(root, file), arcname=arcname)
+
+    # 将ZIP文件发送到客户端
+    return send_file(zip_filename, as_attachment=True, download_name='all_files.zip')
+
+
+@app.route('/api/stop_task', methods=['POST'])
+def stop_task():
+    if app.config['TASK_RUNNING']:
+        app.config['TASK_SHOULD_STOP'] = True
+    return jsonify({'success': True})
+
+
 if __name__ == "__main__":
     load_dotenv()
     openai.api_key = os.getenv('OPENAI_API_KEY')
-    app.run(host='0.0.0.0')
+    app.run(host='0.0.0.0', debug=True)

@@ -36,21 +36,29 @@
         });
     });
     </script>
+    <style>
+    .margin-right {
+        margin-right: 20px;
+    }
+    </style>
 
 </head>
 <body>
-    <h1>PDF Files</h1>
-    <a href="/upload">Upload a new PDF file</a>
+    <h1>PDF List</h1>
+    <div>
+        <a href="/upload" class="margin-right">Upload a new PDF file</a>
+        <a href="/download_all">Download all files</a>
+    </div>
     <ul id="pdf-list">
         {% for file in pdf_files %}
         <li>
             <!-- [D]按钮，用于删除PDF文件 -->
             <form action="/delete/{{ file }}" method="post" style="display: inline;">
-                <button type="submit">[D]</button>
+                <button type="submit">Del</button>
             </form>
             <!-- [A]按钮，用于删除PDF文件的分析结果 -->
             <form action="/delete_analysis/{{ file }}" method="post" style="display: inline;">
-                <button type="submit">[A]</button>
+                <button type="submit">Clear</button>
             </form>
             <a href="/view/{{ file }}">{{ file }}</a>
         </li>

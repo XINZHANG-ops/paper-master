@@ -1,6 +1,17 @@
 var canvas = document.getElementById('the-canvas');
 var canvasBounds = canvas.getBoundingClientRect();
 
+var source = new EventSource("/api/generate_chunks/" + window.filename);
+source.onmessage = function(event) {
+    var data = JSON.parse(event.data);
+    $("#chunks").empty();  // 清空原有的 chunks
+    for (var i = 0; i < data.chunks.length; i++) {
+        $("#chunks").append("<div>" + data.chunks[i] + "</div>");
+    }
+    // 更新 total_usage
+    $(".small-font").text("Total Usage: " + data.total_usage);
+};
+
 
 window.addEventListener('wheel', function(e) {
     // Check if the event happens within the current page
@@ -150,4 +161,3 @@ function autoSaveNote() {
     var note = document.getElementById('note-textarea').value;
     saveNote(note);
 }
-

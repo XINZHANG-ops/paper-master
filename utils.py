@@ -5,6 +5,8 @@ import fitz
 import unicodedata
 import numpy as np
 from tqdm import tqdm
+import os
+import json
 
 
 class MatchFailed(Exception):
@@ -186,6 +188,18 @@ def table_of_content_chunk(file_path):
         chunks.append(chunk)
     chunks.append(doc_text[toc_start:])
     return chunks, pages, chunks_names
+
+
+def check_analysis_exist(chunks_path):
+    if os.path.exists(chunks_path):
+        with open(chunks_path) as handle:
+            chunk_data = json.loads(handle.read())
+        chunks_info = chunk_data['chunks']
+        start_idx = len(chunks_info)
+        total_usage = chunk_data['total_usage']
+        return chunks_info, start_idx, total_usage
+    else:
+        return [], 0, 0
 
 
 # a fast ranking function
