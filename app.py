@@ -10,6 +10,7 @@ from flask import send_file
 import shutil
 import tempfile
 import zipfile
+import tiktoken
 
 app = Flask(__name__)
 app.secret_key = "a_complex_string_which_is_difficult_to_guess"
@@ -153,6 +154,16 @@ def generate_chunks(filename):
         if if_toc_valid:
             app.config['QUESTION'] = "请用中文告诉我这个段落内容的重点是什么？"
             chunks, pages, chunks_names = table_of_content_chunk(file_path)
+            enc = tiktoken.encoding_for_model("gpt-3.5-turbo-16k")
+            chunk_lengths = []
+            for chunk in chunks:
+                tokens = enc.encode(chunk)
+                token_counts = len(tokens)
+                chunk_lengths.append(token_counts)
+            if max(chunk_lengths) >= 15000:
+                chunks, pages, chunks_names = page_chunks(file_path)
+            else:
+                pass
         else:
             app.config['QUESTION'] = "请用中文告诉我这一页内容的重点是什么？"
             chunks, pages, chunks_names = page_chunks(file_path)

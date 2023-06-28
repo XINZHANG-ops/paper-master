@@ -9,4 +9,5 @@ openai
 pdfplumber
 PyMuPDF
 PyPDF2
+tiktoken
 scikit-learn
