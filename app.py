@@ -141,7 +141,9 @@ def view_pdf(filename):
     else:
         total_usage = 'N/A'  # 如果 chunks 文件不存在，则 total_usage 为 'N/A'
 
-    return render_template('view_pdf.html', filename=filename, total_usage=total_usage)
+    theme = session.get('theme', 'white')  # 读取主题设置，如果不存在则默认为白色
+
+    return render_template('view_pdf.html', filename=filename, total_usage=total_usage, theme=theme)
 
 
 @app.route('/api/generate_chunks/<filename>', methods=['POST'])
@@ -329,6 +331,14 @@ def stop_task():
     if app.config['TASK_RUNNING']:
         app.config['TASK_SHOULD_STOP'] = True
     return jsonify({'success': True})
+
+
+@app.route('/change_theme', methods=['POST'])
+def change_theme():
+    theme = request.form.get('theme')
+    if theme in ['white', 'dark', 'grey']:
+        session['theme'] = theme
+    return redirect(request.referrer)
 
 
 if __name__ == "__main__":

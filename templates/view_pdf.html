@@ -43,10 +43,15 @@
     }
     </style>
 </head>
-<body>
+<body style="background-color: {{ 'white' if theme == 'white' else 'black' if theme == 'dark' else 'grey' }}; color: {{ 'black' if theme == 'white' else 'yellow' if theme == 'dark' else 'white' }};">
     <div>
         <p class="medium-font">{{ filename }}</p>
         <p class="small-font">Total Usage: {{ total_usage }}</p>
+        <select id="theme-selector" class="form-select">
+          <option value="white">White</option>
+          <option value="dark">Dark</option>
+          <option value="grey">Grey</option>
+        </select>
     </div>
     <a href="/download_chunks/{{ filename }}">[D]</a>
     <button id="prev"><</button>
@@ -127,5 +132,16 @@
         });
     });
     </script>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script>
+      $(document).ready(function() {
+        $('#theme-selector').change(function() {
+          $.post('/change_theme', {theme: $(this).val()});
+        });
+      });
+    </script>
+
+
 </body>
 </html>

@@ -13,6 +13,26 @@ source.onmessage = function(event) {
 };
 
 
+window.onload = function() {
+    // 当页面加载完成后，检查是否有存储的主题
+    var theme = localStorage.getItem('theme');
+    var themeSelector = document.getElementById('theme-selector');
+
+    if (theme) {
+        document.body.className = theme;
+        themeSelector.value = theme;  // 设置下拉菜单的值为当前主题
+    }
+
+    // 给下拉菜单添加事件监听器
+    themeSelector.addEventListener('change', function() {
+        // 当选择了一个主题，立即应用这个主题
+        document.body.className = this.value;
+
+        // 将主题存储到 localStorage 中，以便页面刷新后还能记住这个主题
+        localStorage.setItem('theme', this.value);
+    });
+};
+
 window.addEventListener('wheel', function(e) {
     // Check if the event happens within the current page
     if (
